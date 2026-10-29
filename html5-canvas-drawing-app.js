@@ -39,18 +39,21 @@ class CommandStack {
 var currFirstIndex = -1;
 var currLastIndex = -1;
 var commandStack = new CommandStack([]);
+var currentCmd = new Command();
 
-function undo() {
-  if (commandStack.currentIndex > 0)
-    commandStack.currentIndex = commandStack.currentIndex - 1;
-  console.log(commandStack);
-}
+// function undo() {
+//   if (commandStack.currentIndex > 0)
+//     commandStack.currentIndex = commandStack.currentIndex - 1;
+//   console.log(commandStack);
+//   drawingApp.redraw();
+// }
 
-function redo() {
-  if (commandStack.currentIndex < commandStack.stack.length - 1)
-    commandStack.currentIndex = commandStack.currentIndex + 1;
-  console.log(commandStack);
-}
+// function redo() {
+//   if (commandStack.currentIndex < commandStack.stack.length - 1)
+//     commandStack.currentIndex = commandStack.currentIndex + 1;
+//   console.log(commandStack);
+//   drawingApp.redraw();
+// }
 
 var drawingApp = (function () {
   "use strict";
@@ -307,74 +310,90 @@ var drawingApp = (function () {
       );
       context.clip();
 
+      var firstIndex = 0;
+      var lastIndex = 0;
+
+      if (commandStack.currentIndex >= 0) {
+        currentCmd = commandStack.stack[commandStack.currentIndex];
+        lastIndex = currentCmd.lastIndex;
+      }
+
       // For each point drawn
-      for (i = 0; i < clickX.length; i += 1) {
-        //   for (
-        //     i = 0;
-        //     i < commandStack.stack[commandStack.currentIndex][1];
-        //     i += 1
-        //   ) {
-        // Set the drawing radius
-        switch (clickSize[i]) {
-          case "small":
-            radius = 2;
-            break;
-          case "normal":
-            radius = 5;
-            break;
-          case "large":
-            radius = 10;
-            break;
-          case "huge":
-            radius = 20;
-            break;
-          default:
-            break;
-        }
+      //for (i = 0; i < clickX.length; i += 1) {
+      for (i = firstIndex; i < lastIndex; i += 1) {
+        for (
+          j = commandStack.stack[i].firstIndex;
+          j < commandStack.stack[i].lastIndex;
+          j += 1
+        ) {
+          // Set the drawing radius
+          switch (clickSize[i]) {
+            case "small":
+              radius = 2;
+              break;
+            case "normal":
+              radius = 5;
+              break;
+            case "large":
+              radius = 10;
+              break;
+            case "huge":
+              radius = 20;
+              break;
+            default:
+              break;
+          }
 
-        // Set the drawing path
-        context.beginPath();
-        // If dragging then draw a line between the two points
-        if (clickDrag[i] && i) {
-          context.moveTo(clickX[i - 1], clickY[i - 1]);
-        } else {
-          // The x position is moved over one pixel so a circle even if not dragging
-          context.moveTo(clickX[i] - 1, clickY[i]);
-        }
-        context.lineTo(clickX[i], clickY[i]);
+          // Set the drawing path
+          context.beginPath();
+          // If dragging then draw a line between the two points
+          if (clickDrag[i] && i) {
+            context.moveTo(clickX[i - 1], clickY[i - 1]);
+          } else {
+            // The x position is moved over one pixel so a circle even if not dragging
+            context.moveTo(clickX[i] - 1, clickY[i]);
+          }
+          context.lineTo(clickX[i], clickY[i]);
 
-        // Set the drawing color
-        if (clickTool[i] === "eraser") {
-          //context.globalCompositeOperation = "destination-out"; // To erase instead of draw over with white
-          context.strokeStyle = "white";
-        } else {
-          //context.globalCompositeOperation = "source-over";	// To erase instead of draw over with white
-          context.strokeStyle = clickColor[i];
+          // Set the drawing color
+          if (clickTool[i] === "eraser") {
+            //context.globalCompositeOperation = "destination-out"; // To erase instead of draw over with white
+            context.strokeStyle = "white";
+          } else {
+            //context.globalCompositeOperation = "source-over";	// To erase instead of draw over with white
+            context.strokeStyle = clickColor[i];
+          }
+          context.lineCap = "round";
+          context.lineJoin = "round";
+          context.lineWidth = radius;
+          context.stroke();
         }
-        context.lineCap = "round";
-        context.lineJoin = "round";
-        context.lineWidth = radius;
-        context.stroke();
+        context.closePath();
+        //context.globalCompositeOperation = "source-over";// To erase instead of draw over with white
+        context.restore();
+
+        // Overlay a crayon texture (if the current tool is crayon)
+        if (curTool === "crayon") {
+          context.globalAlpha = 0.4; // No IE support
+          context.drawImage(
+            crayonTextureImage,
+            0,
+            0,
+            canvasWidth,
+            canvasHeight,
+          );
+        }
+        context.globalAlpha = 1; // No IE support
+
+        // Draw the outline image
+        context.drawImage(
+          outlineImage,
+          drawingAreaX,
+          drawingAreaY,
+          drawingAreaWidth,
+          drawingAreaHeight,
+        );
       }
-      context.closePath();
-      //context.globalCompositeOperation = "source-over";// To erase instead of draw over with white
-      context.restore();
-
-      // Overlay a crayon texture (if the current tool is crayon)
-      if (curTool === "crayon") {
-        context.globalAlpha = 0.4; // No IE support
-        context.drawImage(crayonTextureImage, 0, 0, canvasWidth, canvasHeight);
-      }
-      context.globalAlpha = 1; // No IE support
-
-      // Draw the outline image
-      context.drawImage(
-        outlineImage,
-        drawingAreaX,
-        drawingAreaY,
-        drawingAreaWidth,
-        drawingAreaHeight,
-      );
     },
     // Adds a point to the drawing array.
     // @param x
@@ -508,6 +527,8 @@ var drawingApp = (function () {
           //     `${clickColor.length}, ${clickDrag.length}, ${clickSize.length}, ${clickTool.length}, ${clickX.length}, ${clickY.length}`,
           //   );
           console.log(commandStack);
+          console.log(currentCmd);
+          //console.log(commandStack.stack[commandStack.currentIndex].lastIndex);
           //console.log(`${currFirstIndex}, ${currLastIndex}`);
         },
         cancel = function () {
@@ -533,6 +554,18 @@ var drawingApp = (function () {
         redraw();
         createUserEvents();
       }
+    },
+    undo = function () {
+      if (commandStack.currentIndex > 0)
+        commandStack.currentIndex = commandStack.currentIndex - 1;
+      console.log(commandStack);
+      drawingApp.redraw();
+    },
+    redo = function () {
+      if (commandStack.currentIndex < commandStack.stack.length - 1)
+        commandStack.currentIndex = commandStack.currentIndex + 1;
+      console.log(commandStack);
+      drawingApp.redraw();
     },
     // Creates a canvas element, loads images, adds events, and draws the canvas for the first time.
     init = function () {
@@ -579,5 +612,6 @@ var drawingApp = (function () {
     init: init,
     undo: undo,
     redo: redo,
+    redraw: redraw,
   };
 })();
