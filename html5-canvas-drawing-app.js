@@ -15,25 +15,10 @@
 /*jslint browser: true */
 /*global G_vmlCanvasManager */
 
-// New classes used for tracking strokes, managing a command stack, and implement undo/redo function
-class Stroke {
-  constructor(x, y, color, tool, size, isDrag) {
-    this.x = x;
-    this.y = y;
-    this.color = color;
-    this.tool = tool;
-    this.size = size;
-    this.isDrag = isDrag;
-  }
-}
-
-class StrokeCommands {
-  constructor() {
-    this.history = [];
-  }
-
-  addStroke(stroke) {
-    this.history.push(stroke);
+class Command {
+  constructor(firstIndex, lastIndex) {
+    this.firstIndex = firstIndex;
+    this.lastIndex = lastIndex;
   }
 }
 
@@ -42,39 +27,33 @@ class CommandStack {
     this.stack = [];
     this.currentIndex = -1;
   }
-
-  addCommand(commands) {
-    // if (this.currentIndex < this.stack.length - 1) {
-    //   this.stack = this.stack.slice(0, this.currentIndex + 1); // wipes portion of history if user performs action after undo
-    // }
-    this.stack.push(commands);
-    this.currentIndex + 1;
-  }
-
-  undo() {
-    if (this.currentIndex >= 0) {
-      this.currentIndex--;
-      return true;
-    }
-    return false;
-  }
-
-  redo() {
+  addCommand(command) {
     if (this.currentIndex < this.stack.length - 1) {
-      this.currentIndex++;
-      return true;
+      this.stack = this.stack.slice(0, this.currentIndex + 1);
     }
-    return false;
+    this.stack.push(command);
+    this.currentIndex = this.stack.length - 1;
   }
+}
+
+var currFirstIndex = -1;
+var currLastIndex = -1;
+var commandStack = new CommandStack([]);
+
+function undo() {
+  if (commandStack.currentIndex > 0)
+    commandStack.currentIndex = commandStack.currentIndex - 1;
+  console.log(commandStack);
+}
+
+function redo() {
+  if (commandStack.currentIndex < commandStack.stack.length - 1)
+    commandStack.currentIndex = commandStack.currentIndex + 1;
+  console.log(commandStack);
 }
 
 var drawingApp = (function () {
   "use strict";
-
-  // instantiate stroke commands and command stacks
-  var currentStrokes = new StrokeCommands();
-  var undoStack = new CommandStack();
-  var redoStack = new CommandStack();
 
   var canvas,
     context,
@@ -330,6 +309,11 @@ var drawingApp = (function () {
 
       // For each point drawn
       for (i = 0; i < clickX.length; i += 1) {
+        //   for (
+        //     i = 0;
+        //     i < commandStack.stack[commandStack.currentIndex][1];
+        //     i += 1
+        //   ) {
         // Set the drawing radius
         switch (clickSize[i]) {
           case "small":
@@ -403,19 +387,12 @@ var drawingApp = (function () {
       clickColor.push(curColor);
       clickSize.push(curSize);
       clickDrag.push(dragging);
-      // now adds stroke to the current strokeCommands
-      currentStrokes.addStroke(
-        new Stroke(x, y, curTool, curColor, curSize, dragging),
-      );
     },
     // Add mouse and touch event listeners to the canvas
     createUserEvents = function () {
       var press = function (e) {
-          // paint is now set to false at the start of the press
-          paint = false;
-
-          // instantiate a new StrokeCommands since we are starting a new stroke
-          currentStrokes = new StrokeCommands();
+          if (clickX.length > 0) currFirstIndex = clickX.length - 1;
+          else currFirstIndex = 0;
 
           // Mouse down location
           var sizeHotspotStartX,
@@ -502,11 +479,9 @@ var drawingApp = (function () {
                 }
               }
             }
-          } else {
-            // updated the logic so that the user isn't able to start a stroke outside the drawing area
-            paint = true;
-            addClick(mouseX, mouseY, false);
           }
+          paint = true;
+          addClick(mouseX, mouseY, false);
           redraw();
         },
         drag = function (e) {
@@ -525,12 +500,15 @@ var drawingApp = (function () {
           e.preventDefault();
         },
         release = function () {
-          // now adds the finished stroke to the command stack, but only if paint was true before release
-          if (paint == true) undoStack.addCommand(currentStrokes);
-
-          console.log(undoStack.stack);
+          currLastIndex = clickX.length - 1;
+          commandStack.addCommand(new Command(currFirstIndex, currLastIndex));
           paint = false;
           redraw();
+          //   console.log(
+          //     `${clickColor.length}, ${clickDrag.length}, ${clickSize.length}, ${clickTool.length}, ${clickX.length}, ${clickY.length}`,
+          //   );
+          console.log(commandStack);
+          //console.log(`${currFirstIndex}, ${currLastIndex}`);
         },
         cancel = function () {
           paint = false;
@@ -599,5 +577,7 @@ var drawingApp = (function () {
 
   return {
     init: init,
+    undo: undo,
+    redo: redo,
   };
 })();

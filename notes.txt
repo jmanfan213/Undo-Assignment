@@ -1,0 +1,2 @@
+- confirmed that clickX, clickY, clickDrag, etc. are the same length after each stroke
+- created a commandStack that keeps track of the index where the first stroke started and the index when the stroke finishes
