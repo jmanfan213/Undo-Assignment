@@ -15,6 +15,7 @@
 /*jslint browser: true */
 /*global G_vmlCanvasManager */
 
+// New classes used for tracking strokes, managing a command stack, and implement undo/redo function
 class Stroke {
   constructor(x, y, color, tool, size, isDrag) {
     this.x = x;
@@ -29,15 +30,25 @@ class Stroke {
 class StrokeCommands {
   constructor() {
     this.history = [];
-    this.currentIndex = -1;
   }
 
   addStroke(stroke) {
-    if (this.currentIndex < this.history.length - 1) {
-      this.history = this.history.slice(0, this.currentIndex + 1); // wipes portion of history if user performs action after undo
-    }
     this.history.push(stroke);
-    this.currentIndex++;
+  }
+}
+
+class CommandStack {
+  constructor() {
+    this.stack = [];
+    this.currentIndex = -1;
+  }
+
+  addCommand(commands) {
+    // if (this.currentIndex < this.stack.length - 1) {
+    //   this.stack = this.stack.slice(0, this.currentIndex + 1); // wipes portion of history if user performs action after undo
+    // }
+    this.stack.push(commands);
+    this.currentIndex + 1;
   }
 
   undo() {
@@ -49,7 +60,7 @@ class StrokeCommands {
   }
 
   redo() {
-    if (this.currentIndex < this.history.length - 1) {
+    if (this.currentIndex < this.stack.length - 1) {
       this.currentIndex++;
       return true;
     }
@@ -57,18 +68,13 @@ class StrokeCommands {
   }
 }
 
-class CommandStack {
-  constructor() {
-    this.stack = [];
-    this.currentIndex = -1;
-  }
-  addCommand(commands) {}
-}
-
 var drawingApp = (function () {
   "use strict";
 
-  var canvasHistory = new StrokeCommands();
+  // instantiate stroke commands and command stacks
+  var currentStrokes = new StrokeCommands();
+  var undoStack = new CommandStack();
+  var redoStack = new CommandStack();
 
   var canvas,
     context,
@@ -397,14 +403,20 @@ var drawingApp = (function () {
       clickColor.push(curColor);
       clickSize.push(curSize);
       clickDrag.push(dragging);
-      canvasHistory.addStroke(
+      // now adds stroke to the current strokeCommands
+      currentStrokes.addStroke(
         new Stroke(x, y, curTool, curColor, curSize, dragging),
       );
-      console.log(canvasHistory.history);
     },
     // Add mouse and touch event listeners to the canvas
     createUserEvents = function () {
       var press = function (e) {
+          // paint is now set to false at the start of the press
+          paint = false;
+
+          // instantiate a new StrokeCommands since we are starting a new stroke
+          currentStrokes = new StrokeCommands();
+
           // Mouse down location
           var sizeHotspotStartX,
             mouseX =
@@ -490,9 +502,11 @@ var drawingApp = (function () {
                 }
               }
             }
+          } else {
+            // updated the logic so that the user isn't able to start a stroke outside the drawing area
+            paint = true;
+            addClick(mouseX, mouseY, false);
           }
-          paint = true;
-          addClick(mouseX, mouseY, false);
           redraw();
         },
         drag = function (e) {
@@ -511,6 +525,10 @@ var drawingApp = (function () {
           e.preventDefault();
         },
         release = function () {
+          // now adds the finished stroke to the command stack, but only if paint was true before release
+          if (paint == true) undoStack.addCommand(currentStrokes);
+
+          console.log(undoStack.stack);
           paint = false;
           redraw();
         },
