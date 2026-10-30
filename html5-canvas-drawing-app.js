@@ -16,6 +16,9 @@
 /*global G_vmlCanvasManager */
 
 class Command {
+  // this class represents the first and last index of a stroke that the user performs on the canvas.
+  // clickX, clickY, clickColor, etc. are parallel arrays that the original author instantiate in variable drawingApp; 
+  // they represent the strokes the user performs and are rendered on the app.
   constructor(firstIndex, lastIndex) {
     this.firstIndex = firstIndex;
     this.lastIndex = lastIndex;
@@ -24,36 +27,46 @@ class Command {
 
 class CommandStack {
   constructor() {
-    this.stack = [];
-    this.currentIndex = -1;
+    this.stack = []; // stack that contains commands the user performed
+    this.currentIndex = -1; // pointer used for controlling the undo and redo functionality
   }
   addCommand(command) {
     if (this.currentIndex < this.stack.length - 1) {
-      this.stack = this.stack.slice(0, this.currentIndex + 1);
+      this.stack = this.stack.slice(0, this.currentIndex + 1); // if user performs an action after undoing, commands performed after the pointer will be flushed
     }
-    this.stack.push(command);
-    this.currentIndex = this.stack.length - 1;
+    this.stack.push(command); // push new command to the command stack
+    this.currentIndex = this.stack.length - 1; // update pointer
   }
 }
 
-var currFirstIndex = -1;
-var currLastIndex = -1;
-var commandStack = new CommandStack([]);
-var currentCmd = new Command();
+function updateCommandHistory(forceAutoScroll) {
+  const list = document.getElementById("command-history");
+  if (forceAutoScroll == true) list.scrollTop = list.scrollHeight; // force scroll box to scroll to the bottom when a new stroke is added
+  list.textContent = "";
 
-// function undo() {
-//   if (commandStack.currentIndex > 0)
-//     commandStack.currentIndex = commandStack.currentIndex - 1;
-//   console.log(commandStack);
-//   drawingApp.redraw();
-// }
+  commandStack.stack.forEach(function (command, index) {
+    const item = document.createElement("li");
 
-// function redo() {
-//   if (commandStack.currentIndex < commandStack.stack.length - 1)
-//     commandStack.currentIndex = commandStack.currentIndex + 1;
-//   console.log(commandStack);
-//   drawingApp.redraw();
-// }
+    item.textContent = "Stroke " + (index + 1);
+
+    if (index != commandStack.currentIndex) {
+      item.style.color = "gray";
+    } else if (index == commandStack.currentIndex) {
+      item.textContent += " <- current";
+      item.style.fontWeight = "bold";
+    }
+
+    list.appendChild(item);
+  });
+}
+
+var currFirstIndex = -1; // pointer to the first index of a new stroke
+var currLastIndex = -1; // pointer to the last index when the user finishes a stroke
+var commandStack = new CommandStack([]); //our command stack
+var currentCmd = new Command(); // current command (mainly used for just printing to the console)
+var mouseInsideCanvas = false; // boolean for tracking if mouse is inside canvas
+var trackStroke = false; // boolean for letting the program know when if it's okay to track the user's stroke
+
 
 var drawingApp = (function () {
   "use strict";
@@ -310,22 +323,18 @@ var drawingApp = (function () {
       );
       context.clip();
 
-      var firstIndex = 0;
-      var lastIndex = 0;
+      const visibleCommands = commandStack.stack.slice(0, commandStack.currentIndex +1);
 
-      if (commandStack.currentIndex >= 0) {
-        currentCmd = commandStack.stack[commandStack.currentIndex];
-        lastIndex = currentCmd.lastIndex;
+      if (paint == true){
+        visibleCommands.push(
+          new Command(currFirstIndex, clickX.length - 1)
+        );
       }
 
       // For each point drawn
       //for (i = 0; i < clickX.length; i += 1) {
-      for (i = firstIndex; i < lastIndex; i += 1) {
-        for (
-          j = commandStack.stack[i].firstIndex;
-          j < commandStack.stack[i].lastIndex;
-          j += 1
-        ) {
+      for (const command of visibleCommands) {
+        for ( let i = command.firstIndex; i <= command.lastIndex;i += 1) {
           // Set the drawing radius
           switch (clickSize[i]) {
             case "small":
@@ -368,6 +377,7 @@ var drawingApp = (function () {
           context.lineWidth = radius;
           context.stroke();
         }
+      }
         context.closePath();
         //context.globalCompositeOperation = "source-over";// To erase instead of draw over with white
         context.restore();
@@ -393,7 +403,6 @@ var drawingApp = (function () {
           drawingAreaWidth,
           drawingAreaHeight,
         );
-      }
     },
     // Adds a point to the drawing array.
     // @param x
@@ -410,8 +419,7 @@ var drawingApp = (function () {
     // Add mouse and touch event listeners to the canvas
     createUserEvents = function () {
       var press = function (e) {
-          if (clickX.length > 0) currFirstIndex = clickX.length - 1;
-          else currFirstIndex = 0;
+          currFirstIndex = clickX.length;
 
           // Mouse down location
           var sizeHotspotStartX,
@@ -423,6 +431,7 @@ var drawingApp = (function () {
               this.offsetTop;
 
           if (mouseX < drawingAreaX) {
+            mouseInsideCanvas = false;
             // Left of the drawing area
             if (mouseX > mediumStartX) {
               if (
@@ -451,6 +460,7 @@ var drawingApp = (function () {
             // Right of the drawing area
 
             if (mouseY > toolHotspotStartY) {
+              mouseInsideCanvas = false;
               if (mouseY > sizeHotspotStartY) {
                 sizeHotspotStartX = drawingAreaX + drawingAreaWidth;
                 if (
@@ -511,25 +521,35 @@ var drawingApp = (function () {
               (e.changedTouches ? e.changedTouches[0].pageY : e.pageY) -
               this.offsetTop;
 
+          mouseInsideCanvas =
+            mouseX >= drawingAreaX &&
+            mouseX <= drawingAreaX + drawingAreaWidth &&
+            mouseY >= drawingAreaY &&
+            mouseY <= drawingAreaY + drawingAreaHeight;
+
+          if (mouseInsideCanvas && (e.buttons & 1) !==0) 
+            trackStroke = true; // only track stroke for command stack if the user is holding left click and mouse is in canvas
+
           if (paint) {
             addClick(mouseX, mouseY, true);
             redraw();
           }
+          //console.log(`mouseInsideCanvas = ${mouseInsideCanvas} || trackStroke = ${trackStroke}`);
           // Prevent the whole page from dragging if on mobile
           e.preventDefault();
         },
         release = function () {
           currLastIndex = clickX.length - 1;
-          commandStack.addCommand(new Command(currFirstIndex, currLastIndex));
+          if (trackStroke)
+          {
+            commandStack.addCommand(new Command(currFirstIndex, currLastIndex));
+            updateCommandHistory(true);
+          }
           paint = false;
           redraw();
-          //   console.log(
-          //     `${clickColor.length}, ${clickDrag.length}, ${clickSize.length}, ${clickTool.length}, ${clickX.length}, ${clickY.length}`,
-          //   );
           console.log(commandStack);
-          console.log(currentCmd);
-          //console.log(commandStack.stack[commandStack.currentIndex].lastIndex);
-          //console.log(`${currFirstIndex}, ${currLastIndex}`);
+          //console.log(currentCmd);
+          trackStroke = false;
         },
         cancel = function () {
           paint = false;
@@ -555,18 +575,24 @@ var drawingApp = (function () {
         createUserEvents();
       }
     },
+
+    // added undo and redo functions
     undo = function () {
-      if (commandStack.currentIndex > 0)
+      if (commandStack.currentIndex >= 0)
         commandStack.currentIndex = commandStack.currentIndex - 1;
       console.log(commandStack);
-      drawingApp.redraw();
+      updateCommandHistory(false); // updates command history list on screen
+      drawingApp.redraw(); // updates canvas using the original author's redraw function
     },
     redo = function () {
       if (commandStack.currentIndex < commandStack.stack.length - 1)
         commandStack.currentIndex = commandStack.currentIndex + 1;
       console.log(commandStack);
-      drawingApp.redraw();
-    },
+      updateCommandHistory(false); // updates command history list on screen
+      drawingApp.redraw(); // updates canvas using the original author's redraw function
+    }, 
+
+
     // Creates a canvas element, loads images, adds events, and draws the canvas for the first time.
     init = function () {
       // Create the canvas (Neccessary for IE because it doesn't know what a canvas element is)
